@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: bankak-bot
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: ADMIN_NUMBER
+        sync: false
+      - key: PORT
+        value: 3000
+      - key: SESSION_TIMEOUT
+        value: "60000"
+    healthCheckPath: /health
+    autoDeploy: true
