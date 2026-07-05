@@ -10,7 +10,6 @@ for (const key of required) {
 module.exports = {
   MONGODB_URI: process.env.MONGODB_URI,
   ADMIN_NUMBER: process.env.ADMIN_NUMBER,
-  ADMIN_TOKEN: process.env.ADMIN_TOKEN || '',
   PORT: parseInt(process.env.PORT, 10) || 3000,
   SESSION_TIMEOUT: parseInt(process.env.SESSION_TIMEOUT, 10) || 60000,
 };

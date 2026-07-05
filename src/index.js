@@ -17,14 +17,6 @@ process.on('uncaughtException', (err) => {
   logger.error({ err: err?.message, stack: err?.stack }, 'Uncaught exception');
 });
 
-function requireToken(req) {
-  const token = req.query.token || req.headers['x-admin-token'];
-  if (token !== config.ADMIN_TOKEN) {
-    return false;
-  }
-  return true;
-}
-
 async function main() {
   logger.info('Starting Bankak Bot...');
 
@@ -83,10 +75,7 @@ async function main() {
     }
   });
 
-  app.get('/qr.png', async (req, res) => {
-    if (!requireToken(req)) {
-      return res.status(403).send('Unauthorized');
-    }
+  app.get('/qr.png', async (_req, res) => {
     const qr = getLatestQR();
     if (!qr) {
       return res.status(404).send('QR not available');
@@ -110,10 +99,7 @@ async function main() {
     });
   });
 
-  app.get('/reset-auth', async (req, res) => {
-    if (!requireToken(req)) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
+  app.get('/reset-auth', async (_req, res) => {
     try {
       await sessionsCollection.deleteOne({ _id: 'baileys-auth' });
       logger.info('Auth deleted, restarting...');
