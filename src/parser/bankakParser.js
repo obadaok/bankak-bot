@@ -2,11 +2,17 @@ const { parseAmount } = require('../utils/numberFormatter');
 
 const PATTERNS = {
   operationNumber: /رقم العملية[:\s]*(\d+)/i,
+  operationNumberAlt: /رقم[:\s]*(\d{8,})/i,
   dateTime: /(\d{2}-[A-Za-z]{3}-\d{4}\s+\d{2}:\d{2}:\d{2})/,
+  dateTimeAlt: /(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2})/,
   accountGroups: /(\d{4})\s+(\d{4})\s+(\d{4,7})\s+(\d{4})/g,
+  accountLong: /(\d{6,10})/g,
   beneficiaryName: /اسم المستفيد[:\s]*(.+)/i,
+  beneficiaryNameAlt: /المستفيد[:\s]*(.+)/i,
   senderName: /اسم المرسل[:\s]*(.+)/i,
   amount: /المبلغ[:\s]*([\d,]+\.\d{2})/i,
+  amountBefore: /([\d,]+\.\d{2})\s*المبلغ/i,
+  amountGeneric: /([\d,]+\.\d{2})/,
 };
 
 function extractAccountParts(text) {
@@ -15,25 +21,39 @@ function extractAccountParts(text) {
   while ((match = PATTERNS.accountGroups.exec(text)) !== null) {
     const middle = match[2] + match[3];
     const stripped = middle.replace(/^0+/, '');
-    matches.push(stripped);
+    if (stripped.length >= 5) matches.push(stripped);
   }
+
+  if (matches.length === 0) {
+    while ((match = PATTERNS.accountLong.exec(text)) !== null) {
+      const num = match[1];
+      if (num.length >= 6 && num.length <= 10) {
+        const stripped = num.replace(/^0+/, '');
+        if (!matches.includes(stripped)) matches.push(stripped);
+      }
+    }
+  }
+
   return matches;
 }
 
 function extractOperationNumber(text) {
-  const match = text.match(PATTERNS.operationNumber);
+  let match = text.match(PATTERNS.operationNumber);
+  if (!match) match = text.match(PATTERNS.operationNumberAlt);
   if (!match) return null;
   const full = match[1].trim();
   return full.slice(-4);
 }
 
 function extractDateTime(text) {
-  const match = text.match(PATTERNS.dateTime);
+  let match = text.match(PATTERNS.dateTime);
+  if (!match) match = text.match(PATTERNS.dateTimeAlt);
   return match ? match[1].trim() : null;
 }
 
 function extractBeneficiaryName(text) {
-  const match = text.match(PATTERNS.beneficiaryName);
+  let match = text.match(PATTERNS.beneficiaryName);
+  if (!match) match = text.match(PATTERNS.beneficiaryNameAlt);
   return match ? match[1].trim() : null;
 }
 
@@ -43,8 +63,20 @@ function extractSenderName(text) {
 }
 
 function extractAmount(text) {
-  const match = text.match(PATTERNS.amount);
-  if (!match) return null;
+  let match = text.match(PATTERNS.amount);
+  if (!match) match = text.match(PATTERNS.amountBefore);
+
+  if (!match) {
+    const allAmounts = [...text.matchAll(PATTERNS.amountGeneric)];
+    const validAmounts = allAmounts
+      .map((m) => parseAmount(m[1]))
+      .filter((v) => v !== null && v > 0);
+    if (validAmounts.length > 0) {
+      return Math.max(...validAmounts);
+    }
+    return null;
+  }
+
   const parsed = parseAmount(match[1]);
   return parsed !== null ? parsed : null;
 }
@@ -57,17 +89,19 @@ function parseNotification(text) {
   const senderName = extractSenderName(text);
   const amount = extractAmount(text);
 
-  const hasMinimumFields = operationId !== null && amount !== null && accounts.length > 0;
+  const hasAmount = amount !== null;
+  const hasAccount = accounts.length > 0;
 
-  if (!hasMinimumFields) return null;
+  if (!hasAmount) return null;
 
   return {
-    operationId,
+    operationId: operationId || (amount ? String(Date.now()).slice(-4) : null),
     dateTime,
-    accounts,
+    accounts: hasAccount ? accounts : ['unknown'],
     beneficiaryName,
     senderName,
     amount,
+    fromOcr: !operationId,
   };
 }
 
