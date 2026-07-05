@@ -3,83 +3,261 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>لوحة تحكم بنكك</title>
+<title>بنكك - محلل الإشعارات</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght=500;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #14120F;
+  --bg: #F3EEE2;
+  --paper: #FFFFFF;
+  --yellow: #FFD400;
+  --pink: #FF6FA8;
+  --cyan: #3FDDE0;
+  --green: #8CE99A;
+  --red: #FF6B6B;
+  --border-w: 3px;
+  --shadow: 6px 6px 0 var(--ink);
+  --shadow-sm: 4px 4px 0 var(--ink);
+  --radius: 14px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 0;
+  background: var(--bg); color: var(--ink);
+  font-family: 'Cairo', system-ui, sans-serif;
+}
+.topbar {
+  background: var(--yellow);
+  border-bottom: var(--border-w) solid var(--ink);
+  padding: 14px 24px;
+  display: flex; align-items: center; gap: 12px;
+  position: sticky; top: 0; z-index: 10;
+}
+.topbar h1 { margin: 0; font-size: 20px; font-weight: 900; }
+.topbar .sub { font-size: 13px; opacity: 0.6; font-weight: 700; }
+.container { max-width: 800px; margin: 0 auto; padding: 24px 16px 60px; display: flex; flex-direction: column; gap: 24px; }
+.card {
+  background: var(--paper);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+.card h2 { margin: 0 0 14px; font-size: 17px; font-weight: 800; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.row > * { flex: 1; min-width: 200px; }
+textarea {
+  width: 100%; min-height: 120px; padding: 12px;
+  font-family: inherit; font-size: 15px; font-weight: 700;
+  border: var(--border-w) solid var(--ink); border-radius: 10px;
+  resize: vertical; background: var(--bg);
+}
+.btn {
+  background: var(--ink); color: var(--bg); border: var(--border-w) solid var(--ink);
+  border-radius: 10px; padding: 10px 24px; font-weight: 800; font-size: 15px;
+  cursor: pointer; font-family: inherit;
+  box-shadow: var(--shadow-sm); transition: transform 0.08s ease;
+}
+.btn:hover { transform: translate(-2px, -2px); box-shadow: var(--shadow-hover); }
+.btn:active { transform: translate(0,0); box-shadow: 2px 2px 0 var(--ink); }
+.btn-pink { background: var(--pink); }
+.btn-cyan { background: var(--cyan); }
+.btn-green { background: var(--green); }
+.btn-sm { padding: 6px 16px; font-size: 13px; }
+input[type=file] { display: none; }
+.file-label {
+  display: inline-block; background: var(--cyan); border: var(--border-w) solid var(--ink);
+  border-radius: 10px; padding: 10px 24px; font-weight: 800; font-size: 15px;
+  cursor: pointer; box-shadow: var(--shadow-sm);
+  transition: transform 0.08s ease; text-align: center;
+}
+.file-label:hover { transform: translate(-2px, -2px); box-shadow: var(--shadow-hover); }
+#imagePreview { max-width: 100%; max-height: 240px; border-radius: 10px; border: var(--border-w) solid var(--ink); display: none; margin-top: 10px; }
+.ops-list { display: flex; flex-direction: column; gap: 10px; }
+.op-item {
+  border: var(--border-w) solid var(--ink); border-radius: 10px;
+  padding: 12px 14px; background: var(--bg); font-size: 14px;
+  display: grid; grid-template-columns: 1fr auto; gap: 6px;
+}
+.op-item .op-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; font-weight: 700; }
+.op-item .op-meta span { white-space: nowrap; }
+.op-item .op-amount { font-weight: 900; color: #16794b; font-size: 16px; }
+.empty-state { text-align: center; padding: 20px; font-weight: 700; opacity: 0.5; }
+.summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.summary-item { text-align: center; padding: 10px; }
+.summary-item .val { font-size: 24px; font-weight: 900; }
+.summary-item .lbl { font-size: 13px; font-weight: 700; opacity: 0.6; }
+.report-box { white-space: pre-wrap; font-weight: 700; font-size: 14px; line-height: 1.7; background: var(--bg); border: var(--border-w) solid var(--ink); border-radius: 10px; padding: 16px; direction: ltr; text-align: right; }
+#fileInfo { font-size: 13px; font-weight: 700; opacity: 0.6; }
+@media (max-width: 600px) {
+  .summary-grid { grid-template-columns: 1fr; }
+  .op-item { grid-template-columns: 1fr; }
+}
+</style>
 </head>
 <body>
-
-<div class="page">
-
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-icon">🏦</span>
-      <span class="brand-text">لوحة تحكم <strong>بنكك</strong></span>
-    </div>
-    <div class="status">
-      <span class="dot" id="statusDot"></span>
-      <span id="statusText">جاري التحقق...</span>
-    </div>
-  </header>
-
-  <main class="container">
-
-    <section class="stats-grid">
-      <div class="stat-card accent-yellow">
-        <div class="stat-value" id="statActive">–</div>
-        <div class="stat-label">جلسات نشطة الآن</div>
-      </div>
-      <div class="stat-card accent-cyan">
-        <div class="stat-value" id="statReports">–</div>
-        <div class="stat-label">إجمالي التقارير</div>
-      </div>
-      <div class="stat-card accent-pink">
-        <div class="stat-value" id="statAmount">–</div>
-        <div class="stat-label">إجمالي المبالغ</div>
-      </div>
-      <div class="stat-card accent-green">
-        <div class="stat-value" id="statOps">–</div>
-        <div class="stat-label">إجمالي العمليات</div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-header">
-        <h2>⚡ الجلسات النشطة</h2>
-        <span class="badge" id="activeCountBadge">0</span>
-      </div>
-      <div id="activeSessions" class="sessions-grid"></div>
-      <p class="empty-state" id="activeEmpty">لا توجد جلسات نشطة حالياً</p>
-    </section>
-
-    <section class="panel">
-      <div class="panel-header">
-        <h2>🗂️ السجل التاريخي</h2>
-        <div class="pager">
-          <button class="btn-flat" id="prevPage" aria-label="السابق">◀</button>
-          <span id="pageInfo">صفحة 1</span>
-          <button class="btn-flat" id="nextPage" aria-label="التالي">▶</button>
-        </div>
-      </div>
-      <div id="reportsList" class="reports-list"></div>
-      <p class="empty-state" id="reportsEmpty">لا يوجد سجل بعد</p>
-    </section>
-
-  </main>
-
-  <footer class="footer">
-    يتم تحديث الجلسات النشطة تلقائياً كل 5 ثوانٍ
-  </footer>
+<div class="topbar">
+  <h1>🏦 بنكك</h1>
+  <span class="sub">محلل الإشعارات</span>
 </div>
+<div class="container">
 
-<div class="modal-overlay" id="modalOverlay">
-  <div class="modal">
-    <button class="modal-close" id="modalClose">✕</button>
-    <div id="modalContent"></div>
+  <div class="card">
+    <h2>📝 إضافة إشعار</h2>
+    <textarea id="notifInput" placeholder="الصق نص الإشعار هنا..."></textarea>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" id="parseBtn">🔍 تحليل النص</button>
+      <label class="file-label" id="fileLabel">📸 رفع صورة</label>
+      <input type="file" id="fileInput" accept="image/*">
+    </div>
+    <div id="fileInfo"></div>
+    <img id="imagePreview">
   </div>
-</div>
 
-<script src="app.js"></script>
+  <div class="card" id="summaryCard" style="display:none">
+    <h2>📊 ملخص الجلسة</h2>
+    <div class="summary-grid">
+      <div class="summary-item"><div class="val" id="sCount">0</div><div class="lbl">عمليات</div></div>
+      <div class="summary-item"><div class="val" id="sAmount">0</div><div class="lbl">إجمالي المبلغ</div></div>
+      <div class="summary-item"><div class="val" id="sAccounts">0</div><div class="lbl">حسابات</div></div>
+    </div>
+    <button class="btn btn-green" id="reportBtn" style="margin-top:12px;width:100%">📄 توليد التقرير</button>
+  </div>
+
+  <div class="card">
+    <h2>📋 العمليات <span id="opBadge" style="font-weight:700;opacity:0.5">(0)</span></h2>
+    <div id="opsList"><p class="empty-state">لا توجد عمليات بعد</p></div>
+  </div>
+
+  <div class="card" id="reportCard" style="display:none">
+    <h2>📄 التقرير</h2>
+    <div class="report-box" id="reportContent"></div>
+    <button class="btn btn-cyan btn-sm" id="copyBtn" style="margin-top:10px">📋 نسخ</button>
+    <button class="btn btn-sm" id="clearBtn" style="margin-top:10px;margin-right:8px">🔄 جلسة جديدة</button>
+  </div>
+
+</div>
+<script>
+const API = '/api';
+let ops = [];
+let imageBuffer = null;
+
+async function apiPost(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: body instanceof FormData ? {} : { 'Content-Type': 'application/json' },
+    body,
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error || 'Request failed'); }
+  return res.json();
+}
+
+function $(id) { return document.getElementById(id); }
+
+function updateUI() {
+  const total = ops.reduce((s, o) => s + o.amount, 0);
+  $('sCount').textContent = ops.length;
+  $('sAmount').textContent = total.toLocaleString('en-US', { minimumFractionDigits: 2 });
+  const uniqueAccounts = new Set(ops.flatMap(o => o.accounts || []));
+  $('sAccounts').textContent = uniqueAccounts.size;
+  $('opBadge').textContent = `(${ops.length})`;
+  $('summaryCard').style.display = ops.length ? '' : 'none';
+
+  if (!ops.length) {
+    $('opsList').innerHTML = '<p class="empty-state">لا توجد عمليات بعد</p>';
+    return;
+  }
+
+  $('opsList').innerHTML = ops.map((o, i) => {
+    const id = o.operationDisplay || o.operationId?.slice(-4) || '—';
+    const accts = (o.accounts || []).filter(a => a !== 'unknown').join(' · ') || '—';
+    const name = o.beneficiaryName || '—';
+    const mobile = o.mobile || '';
+    const comment = o.comment || '';
+    const extras = [mobile, comment].filter(Boolean).join(' · ');
+    return `<div class="op-item">
+      <div class="op-meta">
+        <span>#${id}</span>
+        <span>${o.dateTime || '—'}</span>
+        <span>${accts}</span>
+        <span>${name}</span>
+        ${extras ? `<span>${extras}</span>` : ''}
+      </div>
+      <div class="op-amount">${o.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} ج.س</div>
+    </div>`;
+  }).join('');
+}
+
+async function parseText(text) {
+  if (!text.trim()) return;
+  $('parseBtn').textContent = '⏳ جاري المعالجة...';
+  $('parseBtn').disabled = true;
+  try {
+    const data = await apiPost(API + '/parse', { text });
+    if (data.error) { alert(data.error); return; }
+    ops.push(data);
+    updateUI();
+    $('notifInput').value = '';
+  } catch (e) { alert(e.message); }
+  finally { $('parseBtn').textContent = '🔍 تحليل النص'; $('parseBtn').disabled = false; }
+}
+
+async function parseImage(file) {
+  const fd = new FormData();
+  fd.append('image', file);
+  $('parseBtn').textContent = '⏳ جاري التحليل...';
+  $('parseBtn').disabled = true;
+  try {
+    const data = await apiPost(API + '/parse-image', fd);
+    if (data.error) { alert(data.error); return; }
+    if (!data.parsed) { alert('لم يتم التعرف على إشعار صالح في الصورة'); return; }
+    ops.push(data.parsed);
+    updateUI();
+  } catch (e) { alert(e.message); }
+  finally { $('parseBtn').textContent = '🔍 تحليل النص'; $('parseBtn').disabled = false; }
+}
+
+$('parseBtn').addEventListener('click', () => parseText($('notifInput').value));
+
+$('notifInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.ctrlKey) parseText($('notifInput').value);
+});
+
+$('fileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  $('fileInfo').textContent = `${file.name} (${(file.size / 1024).toFixed(0)} كيلوبايت)`;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    $('imagePreview').src = ev.target.result;
+    $('imagePreview').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+  parseImage(file);
+});
+
+$('reportBtn').addEventListener('click', async () => {
+  try {
+    const data = await apiPost(API + '/report', { operations: ops });
+    $('reportContent').textContent = data.report;
+    $('reportCard').style.display = '';
+    $('reportCard').scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { alert(e.message); }
+});
+
+$('copyBtn').addEventListener('click', () => {
+  navigator.clipboard.writeText($('reportContent').textContent).then(() => {
+    $('copyBtn').textContent = '✅ تم النسخ';
+    setTimeout(() => { $('copyBtn').textContent = '📋 نسخ'; }, 2000);
+  });
+});
+
+$('clearBtn').addEventListener('click', () => {
+  ops = [];
+  updateUI();
+  $('reportCard').style.display = 'none';
+});
+</script>
 </body>
 </html>

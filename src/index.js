@@ -1,13 +1,19 @@
 require('./config/env');
 const path = require('path');
 const express = require('express');
+const multer = require('multer');
 const { MongoClient } = require('mongodb');
 const { createWhatsAppClient, getLatestQR } = require('./whatsapp/client');
 const { createMessageRouter } = require('./whatsapp/messageRouter');
 const SessionManager = require('./session/sessionManager');
 const ReportStore = require('./report/reportStore');
+const { parseNotification } = require('./parser/bankakParser');
+const { extractTextFromImage } = require('./utils/ocr');
+const { buildReport, buildTimeoutMessage } = require('./report/reportBuilder');
 const logger = require('./utils/logger');
 const config = require('./config/env');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 let sock = null;
 
@@ -81,10 +87,11 @@ async function main() {
   );
 
   const app = express();
+  app.use(express.json());
 
-  app.use('/dashboard', express.static(path.join(__dirname, '..', 'public')));
+  app.use('/', express.static(path.join(__dirname, '..', 'public')));
 
-  app.get('/', async (_req, res) => {
+  app.get('/qr', async (_req, res) => {
     const qr = getLatestQR();
     if (qr) {
       const QRCode = require('qrcode');
@@ -94,13 +101,14 @@ async function main() {
         <p>امسح رمز QR أدناه من واتساب المدير</p>
         <img src="${dataUrl}" alt="QR Code" style="max-width:300px"/>
         <p><small>الرقم: ${config.ADMIN_NUMBER}</small></p>
+        <p><a href="/">⬅️ الرجوع للتطبيق</a></p>
       </body></html>`);
     } else {
       res.send(`<html dir="rtl"><body style="font-family:sans-serif;text-align:center;padding:40px">
         <h1>🤖 Bankak Bot</h1>
         <p>✅ البوت متصل وجاهز للعمل</p>
         <p>الرقم: ${config.ADMIN_NUMBER}</p>
-        <p><a href="/dashboard">فتح لوحة التحكم</a></p>
+        <p><a href="/">⬅️ الرجوع للتطبيق</a></p>
       </body></html>`);
     }
   });
@@ -154,6 +162,49 @@ async function main() {
       sessionTimeoutMs: config.SESSION_TIMEOUT,
       ...allTime,
     });
+  });
+
+  app.post('/api/parse', (req, res) => {
+    try {
+      const { text } = req.body;
+      if (!text) return res.status(400).json({ error: 'text is required' });
+      const parsed = parseNotification(text);
+      if (!parsed) return res.json({ error: 'لم يتم التعرف على إشعار صالح' });
+      res.json(parsed);
+    } catch (e) {
+      logger.error({ err: e.message }, 'Parse API error');
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/parse-image', upload.single('image'), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'image is required' });
+      const text = await extractTextFromImage(req.file.buffer);
+      if (!text) return res.json({ error: 'لم يتم التعرف على نص في الصورة' });
+      const parsed = parseNotification(text);
+      res.json({ parsed, ocrText: text.slice(0, 500) });
+    } catch (e) {
+      logger.error({ err: e.message }, 'Parse-image API error');
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/report', (req, res) => {
+    try {
+      const { operations } = req.body;
+      if (!operations || !operations.length) return res.status(400).json({ error: 'operations required' });
+
+      const Aggregator = require('./aggregator/aggregator');
+      const agg = new Aggregator();
+      operations.forEach(op => agg.addOperation(op));
+      const stats = agg.getStats();
+      const report = buildReport(stats);
+      res.json({ report, stats });
+    } catch (e) {
+      logger.error({ err: e.message }, 'Report API error');
+      res.status(500).json({ error: e.message });
+    }
   });
 
   app.get('/reset-auth', async (_req, res) => {
