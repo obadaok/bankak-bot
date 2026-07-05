@@ -99,6 +99,9 @@ async function createWhatsAppClient(mongoCollection, onMessage, onSocketUpdate) 
     printQRInTerminal: false,
     browser: Browsers.macOS('Desktop'),
     logger: logger.child({ module: 'baileys' }),
+    syncFullHistory: true,
+    maxMsgRetryCount: 5,
+    retryRequestOnUnknown: true,
   });
 
   if (onSocketUpdate) onSocketUpdate(sock);
