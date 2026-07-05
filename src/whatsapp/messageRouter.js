@@ -48,15 +48,25 @@ function createMessageRouter(sessionManager) {
       if (!sessionManager.hasActiveSession(senderId)) return;
 
       const parsed = parseNotification(trimmed);
-      if (!parsed) return;
+
+      if (!parsed) {
+        logger.info({ senderId, text: trimmed.slice(0, 100) }, 'Message not recognized as bankak notification');
+        return;
+      }
 
       const added = sessionManager.processMessage(senderId, parsed);
       if (added) {
+        await sock.sendMessage(senderId, {
+          text: `✅ تم استلام العملية (${parsed.operationId}) بمبلغ ${parsed.amount.toLocaleString('en-US')} ريال`,
+        });
         logger.info(
           { senderId, operationId: parsed.operationId, amount: parsed.amount },
           'Operation recorded'
         );
       } else {
+        await sock.sendMessage(senderId, {
+          text: `⚠️ العملية (${parsed.operationId}) موجودة مسبقاً وتم تجاهلها`,
+        });
         logger.info(
           { senderId, operationId: parsed.operationId },
           'Duplicate operation ignored'

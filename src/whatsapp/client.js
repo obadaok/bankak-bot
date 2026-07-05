@@ -141,8 +141,7 @@ async function createWhatsAppClient(mongoCollection, onMessage, onSocketUpdate) 
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
+  sock.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages) {
       try {
         if (msg.key && msg.key.remoteJid) {
