@@ -35,13 +35,18 @@ async function main() {
 
   const app = express();
 
-  app.get('/', (_req, res) => {
+  const qrCodeCache = { svg: null, png: null };
+
+  app.get('/', async (_req, res) => {
     const qr = getLatestQR();
     if (qr) {
+      const QRCode = require('qrcode');
+      const dataUrl = await QRCode.toDataURL(qr);
       res.send(`<html dir="rtl"><body style="font-family:sans-serif;text-align:center;padding:40px">
         <h1>🤖 Bankak Bot</h1>
         <p>امسح رمز QR أدناه من واتساب المدير</p>
-        <img src="/qr" alt="QR Code" style="max-width:300px"/>
+        <img src="${dataUrl}" alt="QR Code" style="max-width:300px"/>
+        <p><small>الرقم: ${config.ADMIN_NUMBER}</small></p>
       </body></html>`);
     } else {
       res.send(`<html dir="rtl"><body style="font-family:sans-serif;text-align:center;padding:40px">
@@ -52,19 +57,14 @@ async function main() {
     }
   });
 
-  app.get('/qr', async (_req, res) => {
+  app.get('/qr.png', async (_req, res) => {
     const qr = getLatestQR();
     if (!qr) {
-      return res.status(404).send('QR not available - bot may already be connected');
+      return res.status(404).send('QR not available');
     }
     const QRCode = require('qrcode');
-    const dataUrl = await QRCode.toDataURL(qr);
-    res.send(`<html dir="rtl"><body style="font-family:sans-serif;text-align:center;padding:40px">
-      <h1>🤖 Bankak Bot</h1>
-      <p>امسح رمز QR أدناه من واتساب المدير</p>
-      <img src="${dataUrl}" alt="QR Code" style="max-width:300px"/>
-      <p><small>الرقم: ${config.ADMIN_NUMBER}</small></p>
-    </body></html>`);
+    const png = await QRCode.toBuffer(qr, { type: 'png', width: 400 });
+    res.type('image/png').send(png);
   });
 
   app.get('/health', (_req, res) => {
