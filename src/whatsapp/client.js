@@ -144,11 +144,23 @@ async function createWhatsAppClient(mongoCollection, onMessage, onSocketUpdate) 
   sock.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages) {
       try {
-        if (msg.key && msg.key.remoteJid) {
-          if (msg.key.remoteJid.endsWith('@g.us')) continue;
-          if (msg.key.fromMe) continue;
-          onMessage(sock, msg);
+        if (!msg.key || !msg.key.remoteJid) continue;
+        if (msg.key.remoteJid.endsWith('@g.us')) continue;
+        if (msg.key.fromMe) continue;
+
+        let processedMsg = msg;
+
+        if (msg.key.remoteJid.endsWith('@lid')) {
+          const senderPn = msg.key.senderPn;
+          if (senderPn) {
+            processedMsg = {
+              ...msg,
+              key: { ...msg.key, remoteJid: senderPn },
+            };
+          }
         }
+
+        onMessage(sock, processedMsg);
       } catch (e) {
         logger.error({ err: e.message }, 'Error processing message');
       }
