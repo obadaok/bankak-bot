@@ -1,4 +1,3 @@
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { parseNotification } = require('../parser/bankakParser');
 const { extractTextFromImage } = require('../utils/ocr');
 const logger = require('../utils/logger');
@@ -27,11 +26,6 @@ function isImageMessage(msg) {
     m.imageMessage ||
     m.ephemeralMessage?.message?.imageMessage
   );
-}
-
-function isViewOnceMessage(msg) {
-  const m = msg.message;
-  return !!(m?.viewOnceMessage || m?.ephemeralMessage?.message?.viewOnceMessage);
 }
 
 function createMessageRouter(sessionManager) {
@@ -84,6 +78,7 @@ function createMessageRouter(sessionManager) {
     try {
       await sock.sendMessage(senderId, { text: '🔍 جاري تحليل الصورة...' });
 
+      const { downloadMediaMessage } = await import('@whiskeysockets/baileys');
       const buffer = await downloadMediaMessage(msg, 'buffer', {}, logger);
       if (!buffer) {
         await sock.sendMessage(senderId, { text: '❌ تعذر تحميل الصورة' });

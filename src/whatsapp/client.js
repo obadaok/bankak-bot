@@ -1,12 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const {
-  makeWASocket,
-  useMultiFileAuthState,
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  Browsers,
-} = require('@whiskeysockets/baileys');
 const logger = require('../utils/logger');
 const QRCode = require('qrcode');
 
@@ -101,6 +94,14 @@ function getReconnectDelay() {
 }
 
 async function createWhatsAppClient(mongoCollection, onMessage, onSocketUpdate) {
+  const {
+    makeWASocket,
+    useMultiFileAuthState,
+    DisconnectReason,
+    fetchLatestBaileysVersion,
+    Browsers,
+  } = await import('@whiskeysockets/baileys');
+
   await restoreAuthFromMongo(mongoCollection);
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
