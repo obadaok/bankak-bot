@@ -9,8 +9,10 @@ services:
         sync: false
       - key: ADMIN_NUMBER
         sync: false
+      - key: ADMIN_TOKEN
+        sync: false
       - key: PORT
-        value: 3000
+        value: 10000
       - key: SESSION_TIMEOUT
         value: "60000"
     healthCheckPath: /health

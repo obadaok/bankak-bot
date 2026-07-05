@@ -11,6 +11,13 @@ const logger = require('../utils/logger');
 const QRCode = require('qrcode');
 
 const AUTH_DIR = '/tmp/bankak-auth';
+const RECONNECT_BASE_MS = 2000;
+const RECONNECT_MAX_MS = 30000;
+
+let latestQR = null;
+let qrResolvers = [];
+let reconnectAttempt = 0;
+let reconnectTimer = null;
 
 function ensureAuthDir() {
   if (!fs.existsSync(AUTH_DIR)) {
@@ -53,11 +60,22 @@ async function saveAuthToMongo(mongoCollection) {
   }
 }
 
-let latestQR = null;
-let qrResolvers = [];
+let mongoSavePending = false;
+let mongoSaveTimer = null;
+
+function debouncedSaveAuth(mongoCollection) {
+  if (mongoSaveTimer) clearTimeout(mongoSaveTimer);
+  if (mongoSavePending) return;
+  mongoSavePending = true;
+  mongoSaveTimer = setTimeout(async () => {
+    mongoSavePending = false;
+    await saveAuthToMongo(mongoCollection);
+  }, 3000);
+}
 
 function onQR(qr) {
   latestQR = qr;
+  reconnectAttempt = 0;
   QRCode.toString(qr, { type: 'terminal', small: true }, (err, str) => {
     if (!err) {
       console.log('\n=== QR CODE - Scan with Admin WhatsApp ===\n');
@@ -73,16 +91,13 @@ function getLatestQR() {
   return latestQR;
 }
 
-function waitForQR(timeoutMs = 60000) {
-  if (latestQR) return Promise.resolve(latestQR);
-  return new Promise((resolve, reject) => {
-    qrResolvers.push(resolve);
-    setTimeout(() => {
-      const idx = qrResolvers.indexOf(resolve);
-      if (idx !== -1) qrResolvers.splice(idx, 1);
-      reject(new Error('QR timeout'));
-    }, timeoutMs);
-  });
+function getReconnectDelay() {
+  const delay = Math.min(
+    RECONNECT_BASE_MS * Math.pow(2, reconnectAttempt),
+    RECONNECT_MAX_MS
+  );
+  reconnectAttempt++;
+  return delay + Math.random() * 1000;
 }
 
 async function createWhatsAppClient(mongoCollection, onMessage, onSocketUpdate) {
@@ -99,19 +114,21 @@ async function createWhatsAppClient(mongoCollection, onMessage, onSocketUpdate) 
     printQRInTerminal: false,
     browser: Browsers.macOS('Desktop'),
     logger: logger.child({ module: 'baileys' }),
-    syncFullHistory: true,
-    maxMsgRetryCount: 5,
-    retryRequestOnUnknown: true,
+    maxMsgRetryCount: 3,
   });
 
   if (onSocketUpdate) onSocketUpdate(sock);
 
-  const mongoSave = async () => {
-    await saveCreds();
-    await saveAuthToMongo(mongoCollection);
-  };
+  let lastCredsSave = 0;
 
-  sock.ev.on('creds.update', mongoSave);
+  sock.ev.on('creds.update', async () => {
+    await saveCreds();
+    const now = Date.now();
+    if (now - lastCredsSave > 5000) {
+      lastCredsSave = now;
+      debouncedSaveAuth(mongoCollection);
+    }
+  });
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
@@ -120,23 +137,35 @@ async function createWhatsAppClient(mongoCollection, onMessage, onSocketUpdate) 
 
     if (connection === 'open') {
       logger.info('WhatsApp connected successfully');
-      await mongoSave();
+      reconnectAttempt = 0;
+      await saveCreds();
+      await saveAuthToMongo(mongoCollection);
     }
 
     if (connection === 'close') {
       const shouldReconnect =
         lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
 
-      logger.info({ willReconnect: shouldReconnect }, 'Connection closed');
+      logger.info(
+        { willReconnect: shouldReconnect, attempt: reconnectAttempt },
+        'Connection closed'
+      );
 
       if (shouldReconnect) {
-        setTimeout(() => {
+        sock.ev.removeAllListeners('creds.update');
+        sock.ev.removeAllListeners('connection.update');
+        sock.ev.removeAllListeners('messages.upsert');
+
+        const delay = getReconnectDelay();
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
           createWhatsAppClient(mongoCollection, onMessage, onSocketUpdate).catch((e) =>
             logger.error({ err: e.message }, 'Reconnect failed')
           );
-        }, 3000);
+        }, delay);
       } else {
         logger.warn('Logged out, deleting stored auth');
+        reconnectAttempt = 0;
         if (mongoCollection) {
           await mongoCollection.deleteOne({ _id: 'baileys-auth' });
         }
@@ -144,7 +173,8 @@ async function createWhatsAppClient(mongoCollection, onMessage, onSocketUpdate) 
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
     for (const msg of messages) {
       try {
         if (!msg.key || !msg.key.remoteJid) continue;
@@ -173,4 +203,4 @@ async function createWhatsAppClient(mongoCollection, onMessage, onSocketUpdate) 
   return sock;
 }
 
-module.exports = { createWhatsAppClient, getLatestQR, waitForQR };
+module.exports = { createWhatsAppClient, getLatestQR };

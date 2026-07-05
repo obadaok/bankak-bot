@@ -7,11 +7,13 @@ class Aggregator {
   }
 
   addOperation(parsed) {
-    if (this.seenOperations.has(parsed.operationId)) {
+    const dedupId = parsed.operationId || `ocr_${parsed.amount}_${parsed.accounts?.[0] || 'unknown'}_${Date.now()}`;
+
+    if (this.seenOperations.has(dedupId)) {
       return false;
     }
 
-    this.seenOperations.add(parsed.operationId);
+    this.seenOperations.add(dedupId);
     this.totalCount += 1;
     this.totalAmount += parsed.amount;
 

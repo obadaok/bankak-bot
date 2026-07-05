@@ -12,15 +12,26 @@ function extractMessageText(msg) {
   return (
     m.conversation ||
     m.extendedTextMessage?.text ||
+    m.imageMessage?.caption ||
     m.ephemeralMessage?.message?.conversation ||
     m.ephemeralMessage?.message?.extendedTextMessage?.text ||
+    m.ephemeralMessage?.message?.imageMessage?.caption ||
     ''
   );
 }
 
 function isImageMessage(msg) {
   const m = msg.message;
-  return !!(m?.imageMessage || m?.ephemeralMessage?.message?.imageMessage);
+  if (!m) return false;
+  return !!(
+    m.imageMessage ||
+    m.ephemeralMessage?.message?.imageMessage
+  );
+}
+
+function isViewOnceMessage(msg) {
+  const m = msg.message;
+  return !!(m?.viewOnceMessage || m?.ephemeralMessage?.message?.viewOnceMessage);
 }
 
 function createMessageRouter(sessionManager) {
@@ -53,13 +64,14 @@ function createMessageRouter(sessionManager) {
 
     const added = sessionManager.processMessage(senderId, parsed);
     if (added) {
+      const displayId = parsed.operationDisplay || parsed.operationId?.slice(-4) || '';
       await sock.sendMessage(senderId, {
-        text: `✅ تم استلام العملية (${parsed.operationId}) بمبلغ ${parsed.amount.toLocaleString('en-US')} ريال`,
+        text: `✅ تم استلام العملية (${displayId}) بمبلغ ${parsed.amount.toLocaleString('en-US')} ريال`,
       });
       logger.info({ senderId, operationId: parsed.operationId, amount: parsed.amount }, 'Operation recorded');
     } else {
       await sock.sendMessage(senderId, {
-        text: `⚠️ العملية (${parsed.operationId}) موجودة مسبقاً وتم تجاهلها`,
+        text: `⚠️ العملية مكررة وتم تجاهلها`,
       });
       logger.info({ senderId, operationId: parsed.operationId }, 'Duplicate operation ignored');
     }
@@ -92,13 +104,14 @@ function createMessageRouter(sessionManager) {
 
       const added = sessionManager.processMessage(senderId, parsed);
       if (added) {
+        const displayId = parsed.operationDisplay || parsed.operationId?.slice(-4) || '';
         await sock.sendMessage(senderId, {
-          text: `✅ تم استلام العملية (${parsed.operationId}) بمبلغ ${parsed.amount.toLocaleString('en-US')} ريال`,
+          text: `✅ تم استلام العملية (${displayId}) بمبلغ ${parsed.amount.toLocaleString('en-US')} ريال`,
         });
         logger.info({ senderId, operationId: parsed.operationId, amount: parsed.amount }, 'Operation recorded from image');
       } else {
         await sock.sendMessage(senderId, {
-          text: `⚠️ العملية (${parsed.operationId}) موجودة مسبقاً وتم تجاهلها`,
+          text: `⚠️ العملية مكررة وتم تجاهلها`,
         });
       }
     } catch (e) {

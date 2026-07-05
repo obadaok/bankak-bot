@@ -9,6 +9,22 @@ const config = require('./config/env');
 
 let sock = null;
 
+process.on('unhandledRejection', (err) => {
+  logger.error({ err: err?.message, stack: err?.stack }, 'Unhandled rejection');
+});
+
+process.on('uncaughtException', (err) => {
+  logger.error({ err: err?.message, stack: err?.stack }, 'Uncaught exception');
+});
+
+function requireToken(req) {
+  const token = req.query.token || req.headers['x-admin-token'];
+  if (token !== config.ADMIN_TOKEN) {
+    return false;
+  }
+  return true;
+}
+
 async function main() {
   logger.info('Starting Bankak Bot...');
 
@@ -18,6 +34,14 @@ async function main() {
   const sessionsCollection = db.collection('sessions');
 
   logger.info('Connected to MongoDB');
+
+  mongoClient.on('error', (err) => {
+    logger.error({ err: err.message }, 'MongoDB connection error');
+  });
+
+  mongoClient.on('close', () => {
+    logger.warn('MongoDB connection closed');
+  });
 
   const sessionManager = new SessionManager(async (senderId, content) => {
     if (sock) {
@@ -39,8 +63,6 @@ async function main() {
 
   const app = express();
 
-  const qrCodeCache = { svg: null, png: null };
-
   app.get('/', async (_req, res) => {
     const qr = getLatestQR();
     if (qr) {
@@ -61,7 +83,10 @@ async function main() {
     }
   });
 
-  app.get('/qr.png', async (_req, res) => {
+  app.get('/qr.png', async (req, res) => {
+    if (!requireToken(req)) {
+      return res.status(403).send('Unauthorized');
+    }
     const qr = getLatestQR();
     if (!qr) {
       return res.status(404).send('QR not available');
@@ -71,15 +96,24 @@ async function main() {
     res.type('image/png').send(png);
   });
 
-  app.get('/health', (_req, res) => {
+  app.get('/health', async (_req, res) => {
+    let mongoOk = false;
+    try {
+      await db.admin().ping();
+      mongoOk = true;
+    } catch (_) {}
     res.json({
-      status: 'ok',
+      status: mongoOk && sock?.user ? 'ok' : 'degraded',
       connected: sock?.user ? true : false,
+      mongo: mongoOk,
       activeSessions: sessionManager.getActiveSenders().length,
     });
   });
 
-  app.get('/reset-auth', async (_req, res) => {
+  app.get('/reset-auth', async (req, res) => {
+    if (!requireToken(req)) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
     try {
       await sessionsCollection.deleteOne({ _id: 'baileys-auth' });
       logger.info('Auth deleted, restarting...');
@@ -97,6 +131,8 @@ async function main() {
 
   const shutdown = async () => {
     logger.info('Shutting down...');
+    const { terminateWorker } = require('./utils/ocr');
+    await terminateWorker();
     if (sock) {
       sock.end(undefined);
     }

@@ -3,6 +3,8 @@ const sharp = require('sharp');
 const logger = require('./logger');
 
 let worker = null;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const OCR_TIMEOUT_MS = 20000;
 
 async function getWorker() {
   if (!worker) {
@@ -20,15 +22,25 @@ async function getWorker() {
   return worker;
 }
 
+async function terminateWorker() {
+  if (worker) {
+    try {
+      await worker.terminate();
+    } catch (_) {}
+    worker = null;
+  }
+}
+
 async function preprocessImage(buffer) {
   try {
-    const processed = await sharp(buffer)
-      .grayscale()
-      .normalise()
-      .linear(1.5, -0.3)
-      .sharpen()
-      .png()
-      .toBuffer();
+    const metadata = await sharp(buffer).metadata();
+    let img = sharp(buffer).grayscale().normalise().sharpen();
+
+    if (metadata.width && metadata.width < 1000) {
+      img = img.resize(Math.round(metadata.width * 1.5), null, { fit: 'inside' });
+    }
+
+    const processed = await img.png().toBuffer();
     return processed;
   } catch (e) {
     logger.error({ err: e.message }, 'Image preprocessing failed, using original');
@@ -46,11 +58,24 @@ function cleanOcrText(raw) {
 }
 
 async function extractTextFromImage(imageBuffer) {
+  if (imageBuffer.length > MAX_IMAGE_BYTES) {
+    logger.warn({ size: imageBuffer.length }, 'Image too large for OCR');
+    return '';
+  }
+
   try {
     const processed = await preprocessImage(imageBuffer);
+
     const w = await getWorker();
-    const { data } = await w.recognize(processed);
-    const cleaned = cleanOcrText(data.text);
+
+    const result = await Promise.race([
+      w.recognize(processed),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('OCR timeout')), OCR_TIMEOUT_MS)
+      ),
+    ]);
+
+    const cleaned = cleanOcrText(result.data.text);
     logger.info({ textLength: cleaned.length, preview: cleaned.slice(0, 150) }, 'OCR result');
     return cleaned;
   } catch (e) {
@@ -59,4 +84,4 @@ async function extractTextFromImage(imageBuffer) {
   }
 }
 
-module.exports = { extractTextFromImage };
+module.exports = { extractTextFromImage, terminateWorker };
