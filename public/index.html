@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة تحكم بنكك</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="page">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">🏦</span>
+      <span class="brand-text">لوحة تحكم <strong>بنكك</strong></span>
+    </div>
+    <div class="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">جاري التحقق...</span>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <section class="stats-grid">
+      <div class="stat-card accent-yellow">
+        <div class="stat-value" id="statActive">–</div>
+        <div class="stat-label">جلسات نشطة الآن</div>
+      </div>
+      <div class="stat-card accent-cyan">
+        <div class="stat-value" id="statReports">–</div>
+        <div class="stat-label">إجمالي التقارير</div>
+      </div>
+      <div class="stat-card accent-pink">
+        <div class="stat-value" id="statAmount">–</div>
+        <div class="stat-label">إجمالي المبالغ</div>
+      </div>
+      <div class="stat-card accent-green">
+        <div class="stat-value" id="statOps">–</div>
+        <div class="stat-label">إجمالي العمليات</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>⚡ الجلسات النشطة</h2>
+        <span class="badge" id="activeCountBadge">0</span>
+      </div>
+      <div id="activeSessions" class="sessions-grid"></div>
+      <p class="empty-state" id="activeEmpty">لا توجد جلسات نشطة حالياً</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>🗂️ السجل التاريخي</h2>
+        <div class="pager">
+          <button class="btn-flat" id="prevPage" aria-label="السابق">◀</button>
+          <span id="pageInfo">صفحة 1</span>
+          <button class="btn-flat" id="nextPage" aria-label="التالي">▶</button>
+        </div>
+      </div>
+      <div id="reportsList" class="reports-list"></div>
+      <p class="empty-state" id="reportsEmpty">لا يوجد سجل بعد</p>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    يتم تحديث الجلسات النشطة تلقائياً كل 5 ثوانٍ
+  </footer>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <button class="modal-close" id="modalClose">✕</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

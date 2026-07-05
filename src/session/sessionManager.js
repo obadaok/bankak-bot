@@ -3,9 +3,10 @@ const { buildReport, buildTimeoutMessage } = require('../report/reportBuilder');
 const config = require('../config/env');
 
 class SessionManager {
-  constructor(sendMessage) {
+  constructor(sendMessage, reportStore = null) {
     this.sessions = new Map();
     this.sendMessage = sendMessage;
+    this.reportStore = reportStore;
   }
 
   startSession(senderId) {
@@ -17,17 +18,19 @@ class SessionManager {
     const aggregator = new Aggregator();
     const startedAt = Date.now();
 
-    const timer = setTimeout(() => {
-      this.endSession(senderId);
-    }, config.SESSION_TIMEOUT);
-
-    this.sessions.set(senderId, {
+    const session = {
       senderId,
       aggregator,
       startedAt,
-      timer,
+      timer: null,
       closing: false,
-    });
+    };
+
+    session.timer = setTimeout(() => {
+      this.endSession(senderId);
+    }, config.SESSION_TIMEOUT);
+
+    this.sessions.set(senderId, session);
 
     return true;
   }
@@ -54,6 +57,7 @@ class SessionManager {
     clearTimeout(session.timer);
 
     const stats = session.aggregator.getStats();
+    const endedAt = Date.now();
 
     if (stats.totalCount === 0) {
       await this.sendMessage(senderId, { text: buildTimeoutMessage() });
@@ -62,9 +66,20 @@ class SessionManager {
       if (report) {
         await this.sendMessage(senderId, { text: report });
       }
+
+      if (this.reportStore) {
+        await this.reportStore.saveReport({
+          senderId,
+          startedAt: session.startedAt,
+          endedAt,
+          stats,
+        });
+      }
     }
 
-    this.sessions.delete(senderId);
+    if (this.sessions.get(senderId) === session) {
+      this.sessions.delete(senderId);
+    }
   }
 
   getActiveSenders() {
@@ -75,6 +90,30 @@ class SessionManager {
       }
     }
     return active;
+  }
+
+  getSessionsSnapshot() {
+    const snapshot = [];
+    const now = Date.now();
+
+    for (const [senderId, session] of this.sessions) {
+      if (session.closing) continue;
+
+      const stats = session.aggregator.getStats();
+      const elapsedMs = now - session.startedAt;
+      const remainingMs = Math.max(0, config.SESSION_TIMEOUT - elapsedMs);
+
+      snapshot.push({
+        senderId,
+        startedAt: session.startedAt,
+        remainingMs,
+        totalCount: stats.totalCount,
+        totalAmount: stats.totalAmount,
+        accounts: stats.accounts,
+      });
+    }
+
+    return snapshot;
   }
 }
 

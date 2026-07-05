@@ -1,13 +1,45 @@
 require('./config/env');
+const path = require('path');
 const express = require('express');
 const { MongoClient } = require('mongodb');
 const { createWhatsAppClient, getLatestQR } = require('./whatsapp/client');
 const { createMessageRouter } = require('./whatsapp/messageRouter');
 const SessionManager = require('./session/sessionManager');
+const ReportStore = require('./report/reportStore');
 const logger = require('./utils/logger');
 const config = require('./config/env');
 
 let sock = null;
+
+function maskSenderId(senderId) {
+  if (!senderId) return 'غير معروف';
+  const number = senderId.split('@')[0];
+  if (number.length <= 6) return number;
+  return `${number.slice(0, 4)}****${number.slice(-4)}`;
+}
+
+function serializeSession(session) {
+  return {
+    senderId: maskSenderId(session.senderId),
+    startedAt: session.startedAt,
+    remainingMs: session.remainingMs,
+    totalCount: session.totalCount,
+    totalAmount: session.totalAmount,
+    accounts: session.accounts,
+  };
+}
+
+function serializeReport(report) {
+  return {
+    id: report._id,
+    senderId: maskSenderId(report.senderId),
+    startedAt: report.startedAt,
+    endedAt: report.endedAt,
+    totalCount: report.totalCount,
+    totalAmount: report.totalAmount,
+    accounts: report.accounts,
+  };
+}
 
 process.on('unhandledRejection', (err) => {
   logger.error({ err: err?.message, stack: err?.stack }, 'Unhandled rejection');
@@ -24,16 +56,11 @@ async function main() {
   await mongoClient.connect();
   const db = mongoClient.db();
   const sessionsCollection = db.collection('sessions');
+  const reportsCollection = db.collection('reports');
 
   logger.info('Connected to MongoDB');
 
-  mongoClient.on('error', (err) => {
-    logger.error({ err: err.message }, 'MongoDB connection error');
-  });
-
-  mongoClient.on('close', () => {
-    logger.warn('MongoDB connection closed');
-  });
+  const reportStore = new ReportStore(reportsCollection);
 
   const sessionManager = new SessionManager(async (senderId, content) => {
     if (sock) {
@@ -43,7 +70,7 @@ async function main() {
         logger.error({ err: e.message, senderId }, 'Failed to send message');
       }
     }
-  });
+  }, reportStore);
 
   const messageRouter = createMessageRouter(sessionManager);
 
@@ -54,6 +81,8 @@ async function main() {
   );
 
   const app = express();
+
+  app.use('/dashboard', express.static(path.join(__dirname, '..', 'public')));
 
   app.get('/', async (_req, res) => {
     const qr = getLatestQR();
@@ -71,6 +100,7 @@ async function main() {
         <h1>🤖 Bankak Bot</h1>
         <p>✅ البوت متصل وجاهز للعمل</p>
         <p>الرقم: ${config.ADMIN_NUMBER}</p>
+        <p><a href="/dashboard">فتح لوحة التحكم</a></p>
       </body></html>`);
     }
   });
@@ -96,6 +126,33 @@ async function main() {
       connected: sock?.user ? true : false,
       mongo: mongoOk,
       activeSessions: sessionManager.getActiveSenders().length,
+    });
+  });
+
+  app.get('/api/sessions', (_req, res) => {
+    const snapshot = sessionManager.getSessionsSnapshot().map(serializeSession);
+    res.json({ sessions: snapshot });
+  });
+
+  app.get('/api/reports', async (req, res) => {
+    const limit = parseInt(req.query.limit, 10) || 20;
+    const skip = parseInt(req.query.skip, 10) || 0;
+    const { reports, total } = await reportStore.listReports({ limit, skip });
+    res.json({ reports: reports.map(serializeReport), total });
+  });
+
+  app.get('/api/reports/:id', async (req, res) => {
+    const report = await reportStore.getReportById(req.params.id);
+    if (!report) return res.status(404).json({ error: 'Report not found' });
+    res.json(serializeReport(report));
+  });
+
+  app.get('/api/summary', async (_req, res) => {
+    const allTime = await reportStore.getAllTimeSummary();
+    res.json({
+      activeSessions: sessionManager.getActiveSenders().length,
+      sessionTimeoutMs: config.SESSION_TIMEOUT,
+      ...allTime,
     });
   });
 
