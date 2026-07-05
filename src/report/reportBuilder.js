@@ -11,7 +11,7 @@ function buildReport(stats) {
   lines.push('');
   lines.push(`عدد العمليات:\n${stats.totalCount}`);
   lines.push('');
-  lines.push(`إجمالي المبالغ:\n${formatNumber(stats.totalAmount)}`);
+  lines.push(`إجمالي المبالغ:\n${formatNumber(stats.totalAmount)} ج.س`);
   lines.push('');
   lines.push('الحسابات:');
   lines.push('');
@@ -25,7 +25,7 @@ function buildReport(stats) {
     lines.push('');
     lines.push(`عدد العمليات:\n${account.count}`);
     lines.push('');
-    lines.push(`المجموع:\n${formatNumber(account.total)}`);
+    lines.push(`المجموع:\n${formatNumber(account.total)} ج.س`);
     lines.push('');
   });
 

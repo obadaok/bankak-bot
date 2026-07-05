@@ -66,7 +66,7 @@ function createMessageRouter(sessionManager) {
     if (added) {
       const displayId = parsed.operationDisplay || parsed.operationId?.slice(-4) || '';
       await sock.sendMessage(senderId, {
-        text: `✅ تم استلام العملية (${displayId}) بمبلغ ${parsed.amount.toLocaleString('en-US')} ريال`,
+        text: `✅ تم استلام العملية (${displayId}) بمبلغ ${parsed.amount.toLocaleString('en-US')} جنيه سوداني`,
       });
       logger.info({ senderId, operationId: parsed.operationId, amount: parsed.amount }, 'Operation recorded');
     } else {
@@ -106,7 +106,7 @@ function createMessageRouter(sessionManager) {
       if (added) {
         const displayId = parsed.operationDisplay || parsed.operationId?.slice(-4) || '';
         await sock.sendMessage(senderId, {
-          text: `✅ تم استلام العملية (${displayId}) بمبلغ ${parsed.amount.toLocaleString('en-US')} ريال`,
+          text: `✅ تم استلام العملية (${displayId}) بمبلغ ${parsed.amount.toLocaleString('en-US')} جنيه سوداني`,
         });
         logger.info({ senderId, operationId: parsed.operationId, amount: parsed.amount }, 'Operation recorded from image');
       } else {

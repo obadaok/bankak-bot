@@ -12,115 +12,86 @@ function normalizeDigits(text) {
   return result;
 }
 
-const PATTERNS = {
-  operationNumber: /رقم العملية[:\s]*(\d+)/i,
-  operationNumberAlt: /رقم[:\s]*(\d{8,})/i,
-  dateTime: /(\d{2}-[A-Za-z]{3}-\d{4}\s+\d{2}:\d{2}:\d{2})/,
-  dateTimeAlt: /(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2})/,
-  accountGroups: /(\d{4})\s+(\d{4})\s+(\d{4,7})\s+(\d{4})/g,
-  accountLong: /(\d{6,10})/g,
-  beneficiaryName: /اسم المستفيد[:\s]*(.+)/i,
-  beneficiaryNameAlt: /المستفيد[:\s]*(.+)/i,
-  senderName: /اسم المرسل[:\s]*(.+)/i,
-  amount: /المبلغ[:\s]*([\d,]+\.\d{2})/i,
-  amountBefore: /([\d,]+\.\d{2})\s*المبلغ/i,
-  amountGeneric: /([\d,]+\.\d{2})/g,
-};
-
-function hasOverlap(start, end, ranges) {
-  return ranges.some((r) => start < r.end && end > r.start);
-}
-
-function extractAccountParts(text) {
-  const matches = [];
-  const usedRanges = [];
-
-  let match;
-  while ((match = PATTERNS.accountGroups.exec(text)) !== null) {
-    const middle = match[2] + match[3];
-    const stripped = middle.replace(/^0+/, '');
-    if (stripped.length >= 5) {
-      matches.push(stripped);
-      usedRanges.push({ start: match.index, end: match.index + match[0].length });
-    }
+function trimAccountNumber(account) {
+  const cleaned = account.replace(/\s+/g, '');
+  if (cleaned.length >= 9) {
+    return cleaned.slice(5, -4);
   }
-
-  if (matches.length === 0) {
-    while ((match = PATTERNS.accountLong.exec(text)) !== null) {
-      const num = match[1];
-      const start = match.index;
-      const end = start + match[0].length;
-
-      if (hasOverlap(start, end, usedRanges)) continue;
-
-      if (num.length >= 6 && num.length <= 10) {
-        const stripped = num.replace(/^0+/, '');
-        if (!matches.includes(stripped)) {
-          matches.push(stripped);
-          usedRanges.push({ start, end });
-        }
-      }
-    }
-  }
-
-  return matches;
+  return cleaned;
 }
 
 function extractOperationNumber(text) {
-  let match = text.match(PATTERNS.operationNumber);
-  if (!match) match = text.match(PATTERNS.operationNumberAlt);
+  const match = text.match(/رقم العملية[:\s]*(\d+)/i);
   if (!match) return null;
-  const full = match[1].trim();
-  return { full, display: full.slice(-4) };
+  return match[1].trim();
 }
 
 function extractDateTime(text) {
-  let match = text.match(PATTERNS.dateTime);
-  if (!match) match = text.match(PATTERNS.dateTimeAlt);
+  const match = text.match(/(\d{2}[-/][A-Za-z]+\d*[-/]\d{4}(\s+\d{2}:\d{2}(:\d{2})?)?)/i);
   return match ? match[1].trim() : null;
+}
+
+function extractFromAccount(text) {
+  const match = text.match(/من حساب[:\s]*(\d{4,20})/i);
+  if (!match) return null;
+  return trimAccountNumber(match[1]);
+}
+
+function extractToAccount(text) {
+  const match = text.match(/إلى حساب[:\s]*(\d{4,20})/i);
+  return match ? trimAccountNumber(match[1]) : null;
 }
 
 function extractBeneficiaryName(text) {
-  let match = text.match(PATTERNS.beneficiaryName);
-  if (!match) match = text.match(PATTERNS.beneficiaryNameAlt);
+  const match = text.match(/اسم المرسل اليه[:\s]*(.+)/i);
+  if (match) return match[1].trim();
+
+  const alt = text.match(/اسم المستفيد[:\s]*(.+)/i);
+  return alt ? alt[1].trim() : null;
+}
+
+function extractMobile(text) {
+  const match = text.match(/رقم الموبايل[:\s]*(\d{7,15})/i);
   return match ? match[1].trim() : null;
 }
 
-function extractSenderName(text) {
-  const match = text.match(PATTERNS.senderName);
+function extractComment(text) {
+  const match = text.match(/التعليق[:\s]*(.+)/i);
   return match ? match[1].trim() : null;
 }
 
 function extractAmount(text) {
-  let match = text.match(PATTERNS.amount);
-  if (!match) match = text.match(PATTERNS.amountBefore);
-
-  if (!match) {
-    const allAmounts = [];
-    let m;
-    while ((m = PATTERNS.amountGeneric.exec(text)) !== null) {
-      const val = parseAmount(m[1]);
-      if (val !== null && val > 0) {
-        allAmounts.push({ val, start: m.index });
-      }
-    }
-
-    if (allAmounts.length === 0) return null;
-    if (allAmounts.length === 1) return allAmounts[0].val;
-
-    const amountLabelPos = text.search(/المبلغ|المبلع/i);
-    if (amountLabelPos !== -1) {
-      const closest = allAmounts.reduce((a, b) =>
-        Math.abs(a.start - amountLabelPos) < Math.abs(b.start - amountLabelPos) ? a : b
-      );
-      return closest.val;
-    }
-
-    return allAmounts[0].val;
+  const match = text.match(/(?:المبلغ|المبلع)[:\s]*([\d,]+(?:\.\d{1,3})?)/i);
+  if (match) {
+    const parsed = parseAmount(match[1]);
+    if (parsed !== null) return parsed;
   }
 
-  const parsed = parseAmount(match[1]);
-  return parsed !== null ? parsed : null;
+  const allAmounts = [];
+  let m;
+  while ((m = /([\d,]+\.\d{2})/g.exec(text)) !== null) {
+    const val = parseAmount(m[1]);
+    if (val !== null && val > 0) allAmounts.push({ val, start: m.index });
+  }
+  if (allAmounts.length === 0) {
+    while ((m = /([\d,]+)\s*(?:جنيه|SDG|ج\.س)/gi.exec(text)) !== null) {
+      const val = parseAmount(m[1]);
+      if (val !== null && val > 0) allAmounts.push({ val, start: m.index });
+    }
+  }
+
+  if (allAmounts.length === 0) return null;
+  if (allAmounts.length === 1) return allAmounts[0].val;
+
+  const amountLabelPos = text.search(/المبلغ|المبلع/i);
+  if (amountLabelPos !== -1) {
+    const closest = allAmounts.reduce((a, b) =>
+      Math.abs(a.start - amountLabelPos) < Math.abs(b.start - amountLabelPos) ? a : b
+    );
+    return closest.val;
+  }
+
+  return allAmounts[0].val;
 }
 
 function parseNotification(text) {
@@ -128,21 +99,31 @@ function parseNotification(text) {
 
   const operationId = extractOperationNumber(normalized);
   const dateTime = extractDateTime(normalized);
-  const accounts = extractAccountParts(normalized);
+  const fromAccount = extractFromAccount(normalized);
+  const toAccount = extractToAccount(normalized);
   const beneficiaryName = extractBeneficiaryName(normalized);
-  const senderName = extractSenderName(normalized);
+  const mobile = extractMobile(normalized);
+  const comment = extractComment(normalized);
   const amount = extractAmount(normalized);
 
   if (amount === null) return null;
 
+  const accounts = [];
+  if (fromAccount) accounts.push(fromAccount);
+  if (toAccount) accounts.push(toAccount);
+
   return {
-    operationId: operationId ? operationId.full : null,
-    operationDisplay: operationId ? operationId.display : null,
+    operationId,
+    operationDisplay: operationId ? operationId.slice(-4) : null,
     dateTime,
+    fromAccount,
+    toAccount,
     accounts: accounts.length > 0 ? accounts : ['unknown'],
     beneficiaryName,
-    senderName,
+    mobile,
+    comment,
     amount,
+    currency: 'SDG',
     fromOcr: !operationId,
   };
 }
