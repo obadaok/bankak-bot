@@ -79,7 +79,7 @@ async function main() {
     });
   });
 
-  app.post('/reset-auth', async (_req, res) => {
+  app.get('/reset-auth', async (_req, res) => {
     try {
       await sessionsCollection.deleteOne({ _id: 'baileys-auth' });
       logger.info('Auth deleted, restarting...');
