@@ -85,7 +85,7 @@ function waitForQR(timeoutMs = 60000) {
   });
 }
 
-async function createWhatsAppClient(mongoCollection, onMessage) {
+async function createWhatsAppClient(mongoCollection, onMessage, onSocketUpdate) {
   await restoreAuthFromMongo(mongoCollection);
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
@@ -101,7 +101,14 @@ async function createWhatsAppClient(mongoCollection, onMessage) {
     logger: logger.child({ module: 'baileys' }),
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  if (onSocketUpdate) onSocketUpdate(sock);
+
+  const mongoSave = async () => {
+    await saveCreds();
+    await saveAuthToMongo(mongoCollection);
+  };
+
+  sock.ev.on('creds.update', mongoSave);
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
@@ -110,21 +117,18 @@ async function createWhatsAppClient(mongoCollection, onMessage) {
 
     if (connection === 'open') {
       logger.info('WhatsApp connected successfully');
-      await saveAuthToMongo(mongoCollection);
+      await mongoSave();
     }
 
     if (connection === 'close') {
       const shouldReconnect =
         lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
 
-      logger.info(
-        { willReconnect: shouldReconnect },
-        'Connection closed'
-      );
+      logger.info({ willReconnect: shouldReconnect }, 'Connection closed');
 
       if (shouldReconnect) {
         setTimeout(() => {
-          createWhatsAppClient(mongoCollection, onMessage).catch((e) =>
+          createWhatsAppClient(mongoCollection, onMessage, onSocketUpdate).catch((e) =>
             logger.error({ err: e.message }, 'Reconnect failed')
           );
         }, 3000);
@@ -137,12 +141,17 @@ async function createWhatsAppClient(mongoCollection, onMessage) {
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
     for (const msg of messages) {
-      if (msg.key && msg.key.remoteJid) {
-        if (msg.key.remoteJid.endsWith('@g.us')) continue;
-        if (msg.key.fromMe) continue;
-        onMessage(sock, msg);
+      try {
+        if (msg.key && msg.key.remoteJid) {
+          if (msg.key.remoteJid.endsWith('@g.us')) continue;
+          if (msg.key.fromMe) continue;
+          onMessage(sock, msg);
+        }
+      } catch (e) {
+        logger.error({ err: e.message }, 'Error processing message');
       }
     }
   });

@@ -31,7 +31,11 @@ async function main() {
 
   const messageRouter = createMessageRouter(sessionManager);
 
-  sock = await createWhatsAppClient(sessionsCollection, messageRouter);
+  sock = await createWhatsAppClient(
+    sessionsCollection,
+    messageRouter,
+    (newSock) => { sock = newSock; }
+  );
 
   const app = express();
 

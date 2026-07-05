@@ -3,56 +3,67 @@ const logger = require('../utils/logger');
 
 const COMMAND = '/mbok';
 
+function extractMessageText(msg) {
+  const m = msg.message;
+  if (!m) return '';
+
+  return (
+    m.conversation ||
+    m.extendedTextMessage?.text ||
+    m.ephemeralMessage?.message?.conversation ||
+    m.ephemeralMessage?.message?.extendedTextMessage?.text ||
+    ''
+  );
+}
+
 function createMessageRouter(sessionManager) {
   return async function handleMessage(sock, msg) {
-    const senderId = msg.key.remoteJid;
-    const messageText =
-      msg.message?.conversation ||
-      msg.message?.extendedTextMessage?.text ||
-      '';
+    try {
+      const senderId = msg.key.remoteJid;
+      const pushName = msg.pushName || 'unknown';
 
-    if (!messageText.trim()) return;
+      const messageText = extractMessageText(msg);
 
-    const trimmed = messageText.trim();
+      logger.info({ senderId, pushName, text: messageText.slice(0, 50) }, 'Message received');
 
-    if (trimmed === COMMAND) {
-      const started = sessionManager.startSession(senderId);
-      if (started) {
-        await sock.sendMessage(senderId, {
-          text: '✅ تم تفعيل المحلل لمدة دقيقة. أرسل إشعارات بنكك الآن.',
-        });
-        logger.info({ senderId }, 'Session started');
-      } else {
-        await sock.sendMessage(senderId, {
-          text: '⚠️ لديك جلسة نشطة حالياً، انتظر حتى انتهائها.',
-        });
+      if (!messageText.trim()) return;
+
+      const trimmed = messageText.trim();
+
+      if (trimmed === COMMAND) {
+        const started = sessionManager.startSession(senderId);
+        if (started) {
+          await sock.sendMessage(senderId, {
+            text: '✅ تم تفعيل المحلل لمدة دقيقة. أرسل إشعارات بنكك الآن.',
+          });
+          logger.info({ senderId }, 'Session started');
+        } else {
+          await sock.sendMessage(senderId, {
+            text: '⚠️ لديك جلسة نشطة حالياً، انتظر حتى انتهائها.',
+          });
+        }
+        return;
       }
-      return;
-    }
 
-    if (!sessionManager.hasActiveSession(senderId)) return;
+      if (!sessionManager.hasActiveSession(senderId)) return;
 
-    const parsed = parseNotification(trimmed);
-    if (!parsed) return;
+      const parsed = parseNotification(trimmed);
+      if (!parsed) return;
 
-    const added = sessionManager.processMessage(senderId, parsed);
-    if (added) {
-      logger.info(
-        {
-          senderId,
-          operationId: parsed.operationId,
-          amount: parsed.amount,
-        },
-        'Operation recorded'
-      );
-    } else {
-      logger.info(
-        {
-          senderId,
-          operationId: parsed.operationId,
-        },
-        'Duplicate operation ignored'
-      );
+      const added = sessionManager.processMessage(senderId, parsed);
+      if (added) {
+        logger.info(
+          { senderId, operationId: parsed.operationId, amount: parsed.amount },
+          'Operation recorded'
+        );
+      } else {
+        logger.info(
+          { senderId, operationId: parsed.operationId },
+          'Duplicate operation ignored'
+        );
+      }
+    } catch (e) {
+      logger.error({ err: e.message, stack: e.stack }, 'Error in message handler');
     }
   };
 }
