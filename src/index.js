@@ -79,6 +79,18 @@ async function main() {
     });
   });
 
+  app.post('/reset-auth', async (_req, res) => {
+    try {
+      await sessionsCollection.deleteOne({ _id: 'baileys-auth' });
+      logger.info('Auth deleted, restarting...');
+      res.json({ status: 'deleted' });
+      setTimeout(() => process.exit(0), 1000);
+    } catch (e) {
+      logger.error({ err: e.message }, 'Failed to reset auth');
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.listen(config.PORT, () => {
     logger.info({ port: config.PORT }, 'Health server started');
   });
