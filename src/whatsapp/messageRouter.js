@@ -1,4 +1,5 @@
 const { parseNotification } = require('../parser/bankakParser');
+const { extractTextFromImage } = require('../utils/ocr');
 const logger = require('../utils/logger');
 
 const COMMAND = '/mbok';
@@ -16,41 +17,75 @@ function extractMessageText(msg) {
   );
 }
 
+function isImageMessage(msg) {
+  const m = msg.message;
+  return !!(m?.imageMessage || m?.ephemeralMessage?.message?.imageMessage);
+}
+
 function createMessageRouter(sessionManager) {
-  return async function handleMessage(sock, msg) {
+  async function handleTextMessage(sock, senderId, text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    if (trimmed === COMMAND) {
+      const started = sessionManager.startSession(senderId);
+      if (started) {
+        await sock.sendMessage(senderId, {
+          text: '✅ تم تفعيل المحلل لمدة دقيقة. أرسل إشعارات بنكك الآن.',
+        });
+        logger.info({ senderId }, 'Session started');
+      } else {
+        await sock.sendMessage(senderId, {
+          text: '⚠️ لديك جلسة نشطة حالياً، انتظر حتى انتهائها.',
+        });
+      }
+      return true;
+    }
+
+    if (!sessionManager.hasActiveSession(senderId)) return false;
+
+    const parsed = parseNotification(trimmed);
+    if (!parsed) {
+      logger.info({ senderId, text: trimmed.slice(0, 100) }, 'Text not recognized as bankak notification');
+      return false;
+    }
+
+    const added = sessionManager.processMessage(senderId, parsed);
+    if (added) {
+      await sock.sendMessage(senderId, {
+        text: `✅ تم استلام العملية (${parsed.operationId}) بمبلغ ${parsed.amount.toLocaleString('en-US')} ريال`,
+      });
+      logger.info({ senderId, operationId: parsed.operationId, amount: parsed.amount }, 'Operation recorded');
+    } else {
+      await sock.sendMessage(senderId, {
+        text: `⚠️ العملية (${parsed.operationId}) موجودة مسبقاً وتم تجاهلها`,
+      });
+      logger.info({ senderId, operationId: parsed.operationId }, 'Duplicate operation ignored');
+    }
+    return true;
+  }
+
+  async function handleImageMessage(sock, senderId, msg) {
+    if (!sessionManager.hasActiveSession(senderId)) return;
+
     try {
-      const senderId = msg.key.remoteJid;
-      const pushName = msg.pushName || 'unknown';
+      await sock.sendMessage(senderId, { text: '🔍 جاري تحليل الصورة...' });
 
-      const messageText = extractMessageText(msg);
-
-      logger.info({ senderId, pushName, text: messageText.slice(0, 50) }, 'Message received');
-
-      if (!messageText.trim()) return;
-
-      const trimmed = messageText.trim();
-
-      if (trimmed === COMMAND) {
-        const started = sessionManager.startSession(senderId);
-        if (started) {
-          await sock.sendMessage(senderId, {
-            text: '✅ تم تفعيل المحلل لمدة دقيقة. أرسل إشعارات بنكك الآن.',
-          });
-          logger.info({ senderId }, 'Session started');
-        } else {
-          await sock.sendMessage(senderId, {
-            text: '⚠️ لديك جلسة نشطة حالياً، انتظر حتى انتهائها.',
-          });
-        }
+      const buffer = await sock.downloadMediaMessage(msg, 'buffer', { });
+      if (!buffer) {
+        await sock.sendMessage(senderId, { text: '❌ تعذر تحميل الصورة' });
         return;
       }
 
-      if (!sessionManager.hasActiveSession(senderId)) return;
+      const text = await extractTextFromImage(buffer);
+      if (!text) {
+        await sock.sendMessage(senderId, { text: '❌ لم يتم التعرف على نص في الصورة' });
+        return;
+      }
 
-      const parsed = parseNotification(trimmed);
-
+      const parsed = parseNotification(text);
       if (!parsed) {
-        logger.info({ senderId, text: trimmed.slice(0, 100) }, 'Message not recognized as bankak notification');
+        await sock.sendMessage(senderId, { text: '❌ الصورة لا تحتوي إشعار بنكك صالح' });
         return;
       }
 
@@ -59,18 +94,36 @@ function createMessageRouter(sessionManager) {
         await sock.sendMessage(senderId, {
           text: `✅ تم استلام العملية (${parsed.operationId}) بمبلغ ${parsed.amount.toLocaleString('en-US')} ريال`,
         });
-        logger.info(
-          { senderId, operationId: parsed.operationId, amount: parsed.amount },
-          'Operation recorded'
-        );
+        logger.info({ senderId, operationId: parsed.operationId, amount: parsed.amount }, 'Operation recorded from image');
       } else {
         await sock.sendMessage(senderId, {
           text: `⚠️ العملية (${parsed.operationId}) موجودة مسبقاً وتم تجاهلها`,
         });
-        logger.info(
-          { senderId, operationId: parsed.operationId },
-          'Duplicate operation ignored'
-        );
+      }
+    } catch (e) {
+      logger.error({ err: e.message, stack: e.stack }, 'Error processing image');
+      try {
+        await sock.sendMessage(senderId, { text: '❌ حدث خطأ أثناء معالجة الصورة' });
+      } catch (_) {}
+    }
+  }
+
+  return async function handleMessage(sock, msg) {
+    try {
+      const senderId = msg.key.remoteJid;
+      const pushName = msg.pushName || 'unknown';
+
+      const messageText = extractMessageText(msg);
+
+      logger.info({ senderId, pushName, text: messageText.slice(0, 50), hasImage: isImageMessage(msg) }, 'Message received');
+
+      if (isImageMessage(msg)) {
+        await handleImageMessage(sock, senderId, msg);
+        return;
+      }
+
+      if (messageText.trim()) {
+        await handleTextMessage(sock, senderId, messageText);
       }
     } catch (e) {
       logger.error({ err: e.message, stack: e.stack }, 'Error in message handler');
